@@ -31,6 +31,7 @@ struct perf_inject {
 	bool			have_auxtrace;
 	bool			strip;
 	bool			jit_mode;
+	bool			trace;
 	const char		*input_name;
 	struct perf_data_file	output;
 	u64			bytes_written;
@@ -451,17 +452,14 @@ repipe:
 	return 0;
 }
 
-static int perf_inject__sched_process_exit(struct perf_tool *tool,
-					   union perf_event *event __maybe_unused,
-					   struct perf_sample *sample,
-					   struct perf_evsel *evsel __maybe_unused,
-					   struct machine *machine __maybe_unused)
+static int perf_inject__free_cloned_event(struct perf_tool *tool,
+					  u32 tid)
 {
 	struct perf_inject *inject = container_of(tool, struct perf_inject, tool);
 	struct event_entry *ent;
 
 	list_for_each_entry(ent, &inject->samples, node) {
-		if (sample->tid == ent->tid) {
+		if (tid == ent->tid) {
 			list_del_init(&ent->node);
 			free(ent);
 			break;
@@ -471,21 +469,18 @@ static int perf_inject__sched_process_exit(struct perf_tool *tool,
 	return 0;
 }
 
-static int perf_inject__sched_switch(struct perf_tool *tool,
-				     union perf_event *event,
-				     struct perf_sample *sample,
-				     struct perf_evsel *evsel,
-				     struct machine *machine)
+static int perf_inject__clone_event(struct perf_tool *tool,
+				    union perf_event *event,
+				    struct perf_sample *sample)
 {
 	struct perf_inject *inject = container_of(tool, struct perf_inject, tool);
 	struct event_entry *ent;
 
-	perf_inject__sched_process_exit(tool, event, sample, evsel, machine);
-
+	perf_inject__free_cloned_event(tool, sample->tid);
 	ent = malloc(event->header.size + sizeof(struct event_entry));
 	if (ent == NULL) {
 		color_fprintf(stderr, PERF_COLOR_RED,
-			     "Not enough memory to process sched switch event!");
+			     "Not enough memory to clone event!");
 		return -1;
 	}
 
@@ -495,35 +490,104 @@ static int perf_inject__sched_switch(struct perf_tool *tool,
 	return 0;
 }
 
+static struct event_entry *perf_inject__find_cloned_event(struct perf_tool *tool,
+							  u32 tid)
+{
+	struct event_entry *ent;
+	struct perf_inject *inject = container_of(tool, struct perf_inject, tool);
+
+	list_for_each_entry(ent, &inject->samples, node) {
+		if (tid == ent->tid)
+			return ent;
+	}
+	return NULL;
+}
+
+static int perf_inject__repipe_cloned_event_sample(struct perf_tool *tool,
+						   struct perf_evsel *evsel,
+						   struct machine *machine,
+						   union perf_event *event_sw,
+						   struct perf_sample sample_sw)
+{
+	perf_event__synthesize_sample(event_sw, evsel->attr.sample_type,
+				      evsel->attr.read_format, &sample_sw,
+				      false);
+	build_id__mark_dso_hit(tool, event_sw, &sample_sw, evsel, machine);
+	return perf_event__repipe(tool, event_sw, &sample_sw, machine);
+}
+
+static int perf_inject__sched_process_exit(struct perf_tool *tool,
+					   union perf_event *event __maybe_unused,
+					   struct perf_sample *sample,
+					   struct perf_evsel *evsel __maybe_unused,
+					   struct machine *machine __maybe_unused)
+{
+	perf_inject__free_cloned_event(tool, sample->tid);
+	return 0;
+}
+
+static int perf_inject__sched_switch(struct perf_tool *tool,
+				     union perf_event *event,
+				     struct perf_sample *sample,
+				     struct perf_evsel *evsel __maybe_unused,
+				     struct machine *machine __maybe_unused)
+{
+	return perf_inject__clone_event(tool, event, sample);
+}
+
 static int perf_inject__sched_stat(struct perf_tool *tool,
 				   union perf_event *event __maybe_unused,
 				   struct perf_sample *sample,
 				   struct perf_evsel *evsel,
 				   struct machine *machine)
 {
-	struct event_entry *ent;
 	union perf_event *event_sw;
 	struct perf_sample sample_sw;
-	struct perf_inject *inject = container_of(tool, struct perf_inject, tool);
 	u32 pid = perf_evsel__intval(evsel, sample, "pid");
+	struct event_entry *ent = perf_inject__find_cloned_event(tool, pid);
 
-	list_for_each_entry(ent, &inject->samples, node) {
-		if (pid == ent->tid)
-			goto found;
-	}
+	if (ent == NULL)
+		return 0;
 
-	return 0;
-found:
 	event_sw = &ent->event[0];
 	perf_evsel__parse_sample(evsel, event_sw, &sample_sw);
 
 	sample_sw.period = sample->period;
 	sample_sw.time	 = sample->time;
-	perf_event__synthesize_sample(event_sw, evsel->attr.sample_type,
-				      evsel->attr.read_format, &sample_sw,
-				      false);
-	build_id__mark_dso_hit(tool, event_sw, &sample_sw, evsel, machine);
-	return perf_event__repipe(tool, event_sw, &sample_sw, machine);
+
+	return perf_inject__repipe_cloned_event_sample(tool, evsel, machine,
+						       event_sw, sample_sw);
+}
+
+static int perf_inject__sys_enter(struct perf_tool *tool,
+				  union perf_event *event,
+				  struct perf_sample *sample,
+				  struct perf_evsel *evsel __maybe_unused,
+				  struct machine *machine __maybe_unused)
+{
+	return perf_inject__clone_event(tool, event, sample);
+}
+
+static int perf_inject__sys_exit(struct perf_tool *tool,
+				 union perf_event *event __maybe_unused,
+				 struct perf_sample *sample,
+				 struct perf_evsel *evsel,
+				 struct machine *machine)
+{
+	union perf_event *event_sw;
+	struct perf_sample sample_sw;
+	struct event_entry *ent = perf_inject__find_cloned_event(tool, sample->tid);
+
+	if (ent == NULL)
+		return 0;
+
+	event_sw = &ent->event[0];
+	perf_evsel__parse_sample(evsel, event_sw, &sample_sw);
+
+	sample_sw.period = sample->time - sample_sw.time;
+
+	return perf_inject__repipe_cloned_event_sample(tool, evsel, machine,
+						       event_sw, sample_sw);
 }
 
 static void sig_handler(int sig __maybe_unused)
@@ -656,6 +720,26 @@ static int __cmd_inject(struct perf_inject *inject)
 			else if (!strncmp(name, "sched:sched_stat_", 17))
 				evsel->handler = perf_inject__sched_stat;
 		}
+	} else if (inject->trace) {
+		struct perf_evsel *evsel;
+
+		evlist__for_each_entry(session->evlist, evsel) {
+			const char *name = perf_evsel__name(evsel);
+
+			if (!strcmp(name, "raw_syscalls:sys_exit") ||
+			    !strncmp(name, "syscalls:sys_exit_", sizeof("syscalls:sys_exit_") - 1)) {
+				if (perf_evsel__check_stype(evsel, PERF_SAMPLE_TID, "TID"))
+					return -EINVAL;
+
+				evsel->handler = perf_inject__sys_exit;
+			} else if (!strcmp(name, "raw_syscalls:sys_enter") ||
+			    !strncmp(name, "syscalls:sys_enter_", sizeof("syscalls:sys_enter_") - 1)) {
+				if (perf_evsel__check_stype(evsel, PERF_SAMPLE_TID, "TID"))
+					return -EINVAL;
+
+				evsel->handler = perf_inject__sys_enter;
+			}
+		}
 	} else if (inject->itrace_synth_opts.set) {
 		session->itrace_synth_opts = &inject->itrace_synth_opts;
 		inject->itrace_synth_opts.inject = true;
@@ -717,6 +801,20 @@ static int __cmd_inject(struct perf_inject *inject)
 			if (inject->strip)
 				strip_fini(inject);
 		}
+		if (inject->trace) {
+			// remove the now empty sys_exit event list
+			struct perf_evsel *evsel, *tmp;
+
+			evlist__for_each_entry_safe(session->evlist, tmp, evsel) {
+				const char *name = perf_evsel__name(evsel);
+
+				if (!strcmp(name, "raw_syscalls:sys_exit") ||
+				    !strncmp(name, "syscalls:sys_exit_", sizeof("syscalls:sys_exit_") - 1)) {
+				    perf_evlist__remove(session->evlist, evsel);
+				    perf_evsel__delete(evsel);
+				}
+			}
+		}
 		session->header.data_offset = output_data_offset;
 		session->header.data_size = inject->bytes_written;
 		perf_session__write_header(session, session->evlist, fd, true);
@@ -775,6 +873,9 @@ int cmd_inject(int argc, const char **argv, const char *prefix __maybe_unused)
 		OPT_BOOLEAN('s', "sched-stat", &inject.sched_stat,
 			    "Merge sched-stat and sched-switch for getting events "
 			    "where and how long tasks slept"),
+		OPT_BOOLEAN('t', "trace", &inject.trace,
+			    "Merge sys_enter and sys_exit trace events to measure "
+			    "how long the individual syscalls took"),
 #ifdef HAVE_JITDUMP
 		OPT_BOOLEAN('j', "jit", &inject.jit_mode, "merge jitdump files into perf.data file"),
 #endif
@@ -815,7 +916,7 @@ int cmd_inject(int argc, const char **argv, const char *prefix __maybe_unused)
 		return -1;
 	}
 
-	inject.tool.ordered_events = inject.sched_stat;
+	inject.tool.ordered_events = inject.sched_stat || inject.trace;
 
 	file.path = inject.input_name;
 	inject.session = perf_session__new(&file, true, &inject.tool);

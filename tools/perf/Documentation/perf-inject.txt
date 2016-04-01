@@ -41,6 +41,11 @@ OPTIONS
 	tasks slept. sched_switch contains a callchain where a task slept and
 	sched_stat contains a timeslice how long a task slept.
 
+-t::
+--trace::
+	Merge sys_enter and sys_exit trace events to measure how long the
+	individual syscalls took.
+
 --kallsyms=<file>::
 	kallsyms pathname
 
