@@ -192,9 +192,10 @@ static int read_ftrace_printk(struct pevent *pevent)
 	if (!size)
 		return 0;
 
-	buf = malloc(size);
+	buf = malloc(size + 1);
 	if (buf == NULL)
 		return -1;
+	buf[size] = 0;
 
 	if (do_read(buf, size) < 0) {
 		free(buf);
