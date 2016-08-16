@@ -801,6 +801,23 @@ static int __cmd_inject(struct perf_inject *inject)
 			if (inject->strip)
 				strip_fini(inject);
 		}
+		if (inject->sched_stat) {
+			// remove the now empty sched_stat_* events
+			struct perf_evsel *evsel, *tmp;
+
+			evlist__for_each_entry_safe(session->evlist, tmp, evsel) {
+				const char *name = perf_evsel__name(evsel);
+
+				if (!strcmp(name, "sched:sched_switch")) {
+					// this contains the actually useful data
+					continue;
+				} else if (!strncmp(name, "sched:sched_", sizeof("sched:sched_") - 1)) {
+					// these events all got dropped
+					perf_evlist__remove(session->evlist, evsel);
+					perf_evsel__delete(evsel);
+				}
+			}
+		}
 		if (inject->trace) {
 			// remove the now empty sys_exit event list
 			struct perf_evsel *evsel, *tmp;
