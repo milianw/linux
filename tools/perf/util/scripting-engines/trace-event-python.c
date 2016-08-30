@@ -103,6 +103,23 @@ static void pydict_set_item_string_decref(PyObject *dict, const char *key, PyObj
 	Py_DECREF(val);
 }
 
+static void python_set_sample_values(PyObject *dict,
+				     struct perf_sample *sample)
+{
+	pydict_set_item_string_decref(dict, "pid",
+			PyInt_FromLong(sample->pid));
+	pydict_set_item_string_decref(dict, "tid",
+			PyInt_FromLong(sample->tid));
+	pydict_set_item_string_decref(dict, "cpu",
+			PyInt_FromLong(sample->cpu));
+	pydict_set_item_string_decref(dict, "ip",
+			PyLong_FromUnsignedLongLong(sample->ip));
+	pydict_set_item_string_decref(dict, "time",
+			PyLong_FromUnsignedLongLong(sample->time));
+	pydict_set_item_string_decref(dict, "period",
+			PyLong_FromUnsignedLongLong(sample->period));
+}
+
 static PyObject *get_handler(const char *handler_name)
 {
 	PyObject *handler;
@@ -393,7 +410,7 @@ static void python_process_tracepoint(struct perf_sample *sample,
 {
 	struct event_format *event = evsel->tp_format;
 	PyObject *handler, *context, *t, *obj = NULL, *callchain;
-	PyObject *dict = NULL;
+	PyObject *dict, *dict_sample = NULL;
 	static char handler_name[256];
 	struct format_field *field;
 	unsigned long s, ns;
@@ -438,6 +455,12 @@ static void python_process_tracepoint(struct perf_sample *sample,
 	PyTuple_SetItem(t, n++, PyString_FromString(handler_name));
 	PyTuple_SetItem(t, n++, context);
 
+	dict_sample = PyDict_New();
+	if (!dict_sample)
+		Py_FatalError("couldn't create Python dictionary");
+	python_set_sample_values(dict_sample, sample);
+	PyTuple_SetItem(t, n++, dict_sample);
+
 	/* ip unwinding */
 	callchain = python_process_callchain(sample, evsel, al);
 
@@ -449,6 +472,7 @@ static void python_process_tracepoint(struct perf_sample *sample,
 		PyTuple_SetItem(t, n++, PyString_FromString(comm));
 		PyTuple_SetItem(t, n++, callchain);
 	} else {
+		/* backwards compatibility, most of this is contained in the sample data */
 		pydict_set_item_string_decref(dict, "common_cpu", PyInt_FromLong(cpu));
 		pydict_set_item_string_decref(dict, "common_s", PyInt_FromLong(s));
 		pydict_set_item_string_decref(dict, "common_ns", PyInt_FromLong(ns));
@@ -821,18 +845,7 @@ static void python_process_general_event(struct perf_sample *sample,
 	pydict_set_item_string_decref(dict, "attr", PyString_FromStringAndSize(
 			(const char *)&evsel->attr, sizeof(evsel->attr)));
 
-	pydict_set_item_string_decref(dict_sample, "pid",
-			PyInt_FromLong(sample->pid));
-	pydict_set_item_string_decref(dict_sample, "tid",
-			PyInt_FromLong(sample->tid));
-	pydict_set_item_string_decref(dict_sample, "cpu",
-			PyInt_FromLong(sample->cpu));
-	pydict_set_item_string_decref(dict_sample, "ip",
-			PyLong_FromUnsignedLongLong(sample->ip));
-	pydict_set_item_string_decref(dict_sample, "time",
-			PyLong_FromUnsignedLongLong(sample->time));
-	pydict_set_item_string_decref(dict_sample, "period",
-			PyLong_FromUnsignedLongLong(sample->period));
+	python_set_sample_values(dict_sample, sample);
 	pydict_set_item_string_decref(dict, "sample", dict_sample);
 
 	pydict_set_item_string_decref(dict, "raw_buf", PyString_FromStringAndSize(
@@ -1237,6 +1250,7 @@ static int python_generate_script(struct pevent *pevent, const char *outfile)
 		fprintf(ofp, "def %s__%s(", event->system, event->name);
 		fprintf(ofp, "event_name, ");
 		fprintf(ofp, "context, ");
+		fprintf(ofp, "sample, ");
 		fprintf(ofp, "common_cpu,\n");
 		fprintf(ofp, "\tcommon_secs, ");
 		fprintf(ofp, "common_nsecs, ");
@@ -1334,10 +1348,13 @@ static int python_generate_script(struct pevent *pevent, const char *outfile)
 	}
 
 	fprintf(ofp, "def trace_unhandled(event_name, context, "
-		"event_fields_dict):\n");
+		"event, sample):\n");
 
 	fprintf(ofp, "\t\tprint ' '.join(['%%s=%%s'%%(k,str(v))"
-		"for k,v in sorted(event_fields_dict.items())])\n\n");
+		"for k,v in sorted(event.items())])\n\n");
+
+	fprintf(ofp, "\t\tprint ' '.join(['%%s=%%s'%%(k,str(v))"
+		"for k,v in sorted(sample.items())])\n\n");
 
 	fprintf(ofp, "def print_header("
 		"event_name, cpu, secs, nsecs, pid, comm):\n"
