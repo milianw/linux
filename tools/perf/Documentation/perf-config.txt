@@ -390,6 +390,7 @@ call-graph.*::
 		histogram entry. Default is 0 which means no limitation.
 
 report.*::
+	report.sort-order::
 	report.sort_order::
 		Allows changing the default sort order from "comm,dso,symbol" to
 		some other default, for instance "sym,dso" may be more fitting for
