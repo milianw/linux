@@ -7,6 +7,7 @@
 #include "util/dso.h"
 #include "util/util.h"
 #include "util/debug.h"
+#include "util/callchain.h"
 
 #include "symbol.h"
 
@@ -278,6 +279,15 @@ char *__get_srcline(struct dso *dso, u64 addr, struct symbol *sym,
 	if (!dso->has_srcline)
 		goto out;
 
+	if (sym && !symbol__inliner_srcline(sym, &file, &line)) {
+		if (asprintf(&srcline, "%s:%u",
+				srcline_full_filename ? file : basename(file),
+				line) < 0) {
+			goto out;
+		}
+		return srcline;
+	}
+
 	if (dso->symsrc_filename)
 		dso_name = dso->symsrc_filename;
 	else
@@ -328,4 +338,96 @@ char *get_srcline(struct dso *dso, u64 addr, struct symbol *sym,
 		  bool show_sym)
 {
 	return __get_srcline(dso, addr, sym, show_sym, false);
+}
+
+int get_inliners(struct dso *dso, u64 addr, struct symbol *sym,
+		 get_inliners_t callback, void* data)
+{
+#ifdef HAVE_LIBBFD_SUPPORT
+	const char *dso_name;
+	struct a2l_data *a2l;
+
+	if (!dso->has_srcline)
+		return 1;
+
+	if (dso->symsrc_filename)
+		dso_name = dso->symsrc_filename;
+	else
+		dso_name = dso->long_name;
+
+	if (dso_name[0] == '[')
+		return 1;
+
+	if (!strncmp(dso_name, "/tmp/perf-", 10))
+		return 1;
+
+	a2l = dso->a2l;
+
+	if (!a2l) {
+		dso->a2l = addr2line_init(dso_name);
+		a2l = dso->a2l;
+	}
+
+	if (a2l == NULL) {
+		pr_warning("addr2line_init failed for %s\n", dso_name);
+		return 1;
+	}
+
+	/// FIXME: there seems to be an off-by-one in bfd on my machine,
+	/// reported this problem on the mailing list already
+	a2l->addr = addr - 1;
+	a2l->found = false;
+
+	bfd_map_over_sections(a2l->abfd, find_address_in_section, a2l);
+
+	if (a2l->found && strncmp(sym->name, a2l->funcname, sym->namelen) != 0) {
+		int cnt = 0;
+		int ret = 0;
+
+		if (callchain_param.order == ORDER_CALLEE) {
+			ret = callback(a2l->funcname, a2l->filename, a2l->line,
+				       data);
+			while (bfd_find_inliner_info(a2l->abfd, &a2l->filename,
+						&a2l->funcname, &a2l->line) &&
+				cnt++ < MAX_INLINE_NEST && ret == 0)
+			{
+				ret = callback(a2l->funcname, a2l->filename,
+					       a2l->line, data);
+			}
+		} else {
+			// TODO: this is also extremely ugly, how should this be
+			//       done instead?
+			struct inliner_info {
+				const char *funcname;
+				const char *filename;
+				unsigned line;
+			};
+			struct inliner_info stack[MAX_INLINE_NEST] = {0};
+			int i = 0;
+
+			stack[i].funcname = a2l->funcname;
+			stack[i].filename = a2l->filename;
+			stack[i].line = a2l->line;
+			++i;
+
+			while (bfd_find_inliner_info(a2l->abfd, &a2l->filename,
+						&a2l->funcname, &a2l->line) &&
+				cnt++ < MAX_INLINE_NEST)
+			{
+				stack[i].funcname = a2l->funcname;
+				stack[i].filename = a2l->filename;
+				stack[i].line = a2l->line;
+				++i;
+			}
+
+			while (i) {
+				--i;
+				callback(stack[i].funcname, stack[i].filename,
+					 stack[i].line, data);
+			}
+		}
+		return 0;
+	}
+#endif
+	return 1;
 }

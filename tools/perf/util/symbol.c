@@ -259,6 +259,48 @@ struct symbol *symbol__new(u64 start, u64 len, u8 binding, const char *name)
 	return sym;
 }
 
+struct symbol *symbol__new_inliner(const char *name, const char *file, unsigned line)
+{
+	size_t namelen = strlen(name) + 1;
+	size_t filelen = file ? (strlen(file) + 1) : 0;
+	struct symbol *sym = calloc(1, (symbol_conf.priv_size +
+					sizeof(*sym) + namelen + filelen));
+	if (sym == NULL)
+		return NULL;
+
+	if (symbol_conf.priv_size) {
+		if (symbol_conf.init_annotation) {
+			struct annotation *notes = (void *)sym;
+			pthread_mutex_init(&notes->lock, NULL);
+		}
+		sym = ((void *)sym) + symbol_conf.priv_size;
+	}
+
+	sym->start   = filelen - 1;
+	sym->end     = line;
+	sym->binding = 0;
+	sym->inliner = 1;
+	sym->namelen = namelen - 1;
+
+	pr_debug4("%s: %s %s:%u\n", __func__, name, file, line);
+	memcpy(sym->name, name, namelen);
+	memcpy(sym->name + namelen, file, filelen);
+
+	return sym;
+}
+
+int symbol__inliner_srcline(struct symbol *sym, char **file, unsigned *line)
+{
+	if (sym->inliner) {
+		const size_t filelen = (size_t)(sym->start);
+		char *inliner_data = sym->name + sym->namelen + 1;
+		*file = filelen ? (inliner_data + sizeof(size_t)) : NULL;
+		*line = (unsigned)(sym->end);
+		return filelen > 0 ? 0 : 1;
+	}
+	return 1;
+}
+
 void symbol__delete(struct symbol *sym)
 {
 	free(((void *)sym) - symbol_conf.priv_size);

@@ -293,6 +293,11 @@ char *__get_srcline(struct dso *dso, u64 addr, struct symbol *sym,
 		  bool show_sym, bool unwind_inlines);
 void free_srcline(char *srcline);
 
+typedef int (*get_inliners_t) (const char *funcname, const char *filename,
+			       unsigned line, void *data);
+int get_inliners(struct dso *dso, u64 addr, struct symbol *sym,
+		 get_inliners_t callback, void* data);
+
 int perf_event_paranoid(void);
 
 void mem_bswap_64(void *src, int byte_size);

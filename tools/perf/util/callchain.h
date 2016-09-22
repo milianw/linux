@@ -80,7 +80,8 @@ typedef void (*sort_chain_func_t)(struct rb_root *, struct callchain_root *,
 
 enum chain_key {
 	CCKEY_FUNCTION,
-	CCKEY_ADDRESS
+	CCKEY_ADDRESS,
+	CCKEY_SRCLINE
 };
 
 enum chain_value {

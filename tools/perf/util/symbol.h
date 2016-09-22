@@ -58,6 +58,7 @@ struct symbol {
 	u16		namelen;
 	u8		binding;
 	u8		idle:1;
+	u8		inliner:1;
 	u8		arch_sym;
 	char		name[0];
 };
@@ -278,6 +279,8 @@ void symbol__elf_init(void);
 int symbol__annotation_init(void);
 
 struct symbol *symbol__new(u64 start, u64 len, u8 binding, const char *name);
+struct symbol *symbol__new_inliner(const char *name, const char *file, unsigned line);
+int symbol__inliner_srcline(struct symbol *sym, char **file, unsigned *line);
 size_t __symbol__fprintf_symname_offs(const struct symbol *sym,
 				      const struct addr_location *al,
 				      bool unknown_as_addr, FILE *fp);
@@ -293,6 +296,7 @@ bool symbol__restricted_filename(const char *filename,
 				 const char *restricted_filename);
 int symbol__config_symfs(const struct option *opt __maybe_unused,
 			 const char *dir, int unset __maybe_unused);
+char *demangle_sym(struct dso *dso, int kmodule, const char *symbol);
 
 int dso__load_sym(struct dso *dso, struct map *map, struct symsrc *syms_ss,
 		  struct symsrc *runtime_ss, int kmodule);

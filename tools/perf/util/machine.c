@@ -1912,14 +1912,51 @@ check_calls:
 	return 0;
 }
 
+struct inliners_data {
+	struct callchain_cursor *cursor;
+	struct unwind_entry *entry;
+};
+
+static int inliners_entry(const char *funcname, const char *filename, unsigned line,
+			  void *arg)
+{
+	struct inliners_data *data = arg;
+	int ret = 0;
+	char *demangled = NULL;
+	struct symbol *sym = NULL;
+
+	demangled = demangle_sym(data->entry->map->dso, 0, funcname);
+	// TODO: the memory allocated by symbol__new_inliner is leaked,
+	//       where and how should it be freed?
+	sym = symbol__new_inliner(demangled ? demangled : funcname,
+				  filename, line);
+	free(demangled);
+
+	ret = callchain_cursor_append(data->cursor, data->entry->ip,
+				      data->entry->map, sym);
+
+	return ret;
+}
+
 static int unwind_entry(struct unwind_entry *entry, void *arg)
 {
 	struct callchain_cursor *cursor = arg;
+	int ret = 1;
 
 	if (symbol_conf.hide_unresolved && entry->sym == NULL)
 		return 0;
-	return callchain_cursor_append(cursor, entry->ip,
-				       entry->map, entry->sym);
+
+	// TODO: cache this somehow?
+	if (callchain_param.key == CCKEY_SRCLINE && entry->sym) {
+		struct inliners_data data = {cursor, entry};
+		ret = get_inliners(entry->map->dso, entry->ip, entry->sym,
+				   inliners_entry, &data);
+	}
+	if (ret != 0) {
+		ret = callchain_cursor_append(cursor, entry->ip,
+					      entry->map, entry->sym);
+	}
+	return ret;
 }
 
 static int thread__resolve_callchain_unwind(struct thread *thread,

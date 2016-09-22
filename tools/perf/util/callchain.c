@@ -76,6 +76,10 @@ static int parse_callchain_sort_key(const char *value)
 		callchain_param.key = CCKEY_ADDRESS;
 		return 0;
 	}
+	if (!strncmp(value, "srcline", strlen(value))) {
+		callchain_param.key = CCKEY_SRCLINE;
+		return 0;
+	}
 	if (!strncmp(value, "branch", strlen(value))) {
 		callchain_param.branch_callstack = 1;
 		return 0;
@@ -494,6 +498,23 @@ static enum match_result match_chain(struct callchain_cursor_node *node,
 	    callchain_param.key == CCKEY_FUNCTION) {
 		left = cnode->ms.sym->start;
 		right = sym->start;
+	} else if (cnode->ms.sym && sym && callchain_param.key == CCKEY_SRCLINE) {
+		char *file_left, *file_right;
+		unsigned line_left, line_right;
+		// default fall-back is to merge by function
+		left = cnode->ms.sym->start;
+		right = sym->start;
+		if (!symbol__inliner_srcline(cnode->ms.sym, &file_left, &line_left) &&
+		    !symbol__inliner_srcline(sym, &file_right, &line_right))
+		{
+			int cmp = strcmp(file_left, file_right);
+			if (cmp != 0) {
+				return cmp < 0 ? MATCH_LT : MATCH_GT;
+			} else {
+				left = line_left;
+				right = line_right;
+			}
+		}
 	} else {
 		left = cnode->ip;
 		right = node->ip;
@@ -861,7 +882,7 @@ char *callchain_list__sym_name(struct callchain_list *cl,
 	int printed;
 
 	if (cl->ms.sym) {
-		if (callchain_param.key == CCKEY_ADDRESS &&
+		if (callchain_param.key != CCKEY_FUNCTION &&
 		    cl->ms.map && !cl->srcline)
 			cl->srcline = get_srcline(cl->ms.map->dso,
 						  map__rip_2objdump(cl->ms.map,

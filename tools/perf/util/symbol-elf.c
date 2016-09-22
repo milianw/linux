@@ -211,7 +211,7 @@ static bool want_demangle(bool is_kernel_sym)
 	return is_kernel_sym ? symbol_conf.demangle_kernel : symbol_conf.demangle;
 }
 
-static char *demangle_sym(struct dso *dso, int kmodule, const char *elf_name)
+char *demangle_sym(struct dso *dso, int kmodule, const char *elf_name)
 {
 	int demangle_flags = verbose ? (DMGL_PARAMS | DMGL_ANSI) : DMGL_NO_OPTS;
 	char *demangled = NULL;
