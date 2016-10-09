@@ -1949,7 +1949,7 @@ static int unwind_entry(struct unwind_entry *entry, void *arg)
 	// TODO: cache this somehow?
 	if (callchain_param.key == CCKEY_SRCLINE && entry->sym) {
 		struct inliners_data data = {cursor, entry};
-		ret = get_inliners(entry->map->dso, entry->ip, entry->sym,
+		ret = get_inliners(entry->map->dso, entry->map->start + entry->ip, entry->sym,
 				   inliners_entry, &data);
 	}
 	if (ret != 0) {

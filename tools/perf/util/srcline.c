@@ -169,7 +169,7 @@ static int addr2line(const char *dso_name, u64 addr,
 		return 0;
 	}
 
-	a2l->addr = addr;
+	a2l->addr = addr - 1;
 	a2l->found = false;
 
 	bfd_map_over_sections(a2l->abfd, find_address_in_section, a2l);
