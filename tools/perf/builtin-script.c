@@ -516,9 +516,12 @@ static int perf_session__check_output_opt(struct perf_session *session)
 			return -1;
 		}
 
-		if (evsel && output[j].fields &&
-			perf_evsel__check_attr(evsel, session))
-			return -1;
+// 		if (evsel && output[j].fields &&
+// 			perf_evsel__check_attr(evsel, session))
+// 		{
+// 			pr_err("%s bla\n", event_type(j));
+// 			return -1;
+// 		}
 
 		if (evsel == NULL)
 			continue;
