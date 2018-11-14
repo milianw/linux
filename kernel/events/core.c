@@ -6369,7 +6369,7 @@ perf_callchain(struct perf_event *event, struct pt_regs *regs)
 void perf_prepare_sample(struct perf_event_header *header,
 			 struct perf_sample_data *data,
 			 struct perf_event *event,
-			 struct pt_regs *regs)
+			 struct pt_regs *regs, struct pt_regs *iregs)
 {
 	u64 sample_type = event->attr.sample_type;
 
@@ -6474,7 +6474,7 @@ void perf_prepare_sample(struct perf_event_header *header,
 		/* regs dump ABI info */
 		int size = sizeof(u64);
 
-		perf_sample_regs_intr(&data->regs_intr, regs);
+		perf_sample_regs_intr(&data->regs_intr, iregs);
 
 		if (data->regs_intr.regs) {
 			u64 mask = event->attr.sample_regs_intr;
@@ -6492,7 +6492,7 @@ void perf_prepare_sample(struct perf_event_header *header,
 static __always_inline void
 __perf_event_output(struct perf_event *event,
 		    struct perf_sample_data *data,
-		    struct pt_regs *regs,
+		    struct pt_regs *regs, struct pt_regs *iregs,
 		    int (*output_begin)(struct perf_output_handle *,
 					struct perf_event *,
 					unsigned int))
@@ -6503,7 +6503,7 @@ __perf_event_output(struct perf_event *event,
 	/* protect the callchain buffers */
 	rcu_read_lock();
 
-	perf_prepare_sample(&header, data, event, regs);
+	perf_prepare_sample(&header, data, event, regs, iregs);
 
 	if (output_begin(&handle, event, header.size))
 		goto exit;
@@ -6519,25 +6519,25 @@ exit:
 void
 perf_event_output_forward(struct perf_event *event,
 			 struct perf_sample_data *data,
-			 struct pt_regs *regs)
+			 struct pt_regs *regs, struct pt_regs *iregs)
 {
-	__perf_event_output(event, data, regs, perf_output_begin_forward);
+	__perf_event_output(event, data, regs, iregs, perf_output_begin_forward);
 }
 
 void
 perf_event_output_backward(struct perf_event *event,
 			   struct perf_sample_data *data,
-			   struct pt_regs *regs)
+			   struct pt_regs *regs, struct pt_regs *iregs)
 {
-	__perf_event_output(event, data, regs, perf_output_begin_backward);
+	__perf_event_output(event, data, regs, iregs, perf_output_begin_backward);
 }
 
 void
 perf_event_output(struct perf_event *event,
 		  struct perf_sample_data *data,
-		  struct pt_regs *regs)
+		  struct pt_regs *regs, struct pt_regs *iregs)
 {
-	__perf_event_output(event, data, regs, perf_output_begin);
+	__perf_event_output(event, data, regs, iregs, perf_output_begin);
 }
 
 /*
@@ -7738,7 +7738,7 @@ int perf_event_account_interrupt(struct perf_event *event)
 
 static int __perf_event_overflow(struct perf_event *event,
 				   int throttle, struct perf_sample_data *data,
-				   struct pt_regs *regs)
+				   struct pt_regs *regs, struct pt_regs *iregs)
 {
 	int events = atomic_read(&event->event_limit);
 	int ret = 0;
@@ -7765,7 +7765,7 @@ static int __perf_event_overflow(struct perf_event *event,
 		perf_event_disable_inatomic(event);
 	}
 
-	READ_ONCE(event->overflow_handler)(event, data, regs);
+	READ_ONCE(event->overflow_handler)(event, data, regs, iregs);
 
 	if (*perf_event_fasync(event) && event->pending_kill) {
 		event->pending_wakeup = 1;
@@ -7777,9 +7777,9 @@ static int __perf_event_overflow(struct perf_event *event,
 
 int perf_event_overflow(struct perf_event *event,
 			  struct perf_sample_data *data,
-			  struct pt_regs *regs)
+			  struct pt_regs *regs, struct pt_regs *iregs)
 {
-	return __perf_event_overflow(event, 1, data, regs);
+	return __perf_event_overflow(event, 1, data, regs, iregs);
 }
 
 /*
@@ -7842,7 +7842,7 @@ static void perf_swevent_overflow(struct perf_event *event, u64 overflow,
 
 	for (; overflow; overflow--) {
 		if (__perf_event_overflow(event, throttle,
-					    data, regs)) {
+					    data, regs, regs)) {
 			/*
 			 * We inhibit the overflow from happening when
 			 * hwc->interrupts == MAX_INTERRUPTS.
@@ -8550,7 +8550,7 @@ out:
 	if (!ret)
 		return;
 
-	event->orig_overflow_handler(event, data, regs);
+	event->orig_overflow_handler(event, data, regs, regs);
 }
 
 static int perf_event_set_bpf_handler(struct perf_event *event, u32 prog_fd)
@@ -9152,7 +9152,7 @@ static enum hrtimer_restart perf_swevent_hrtimer(struct hrtimer *hrtimer)
 
 	if (regs && !perf_exclude_event(event, regs)) {
 		if (!(event->attr.exclude_idle && is_idle_task(current)))
-			if (__perf_event_overflow(event, 1, &data, regs))
+			if (__perf_event_overflow(event, 1, &data, regs, regs))
 				ret = HRTIMER_NORESTART;
 	}
 

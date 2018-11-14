@@ -2299,7 +2299,7 @@ static int handle_pmi_common(struct pt_regs *regs, u64 status)
 		if (has_branch_stack(event))
 			data.br_stack = &cpuc->lbr_stack;
 
-		if (perf_event_overflow(event, &data, regs))
+		if (perf_event_overflow(event, &data, regs, regs))
 			x86_pmu_stop(event, 0);
 	}
 

@@ -670,7 +670,7 @@ fail:
 		data.raw = &raw;
 	}
 
-	throttle = perf_event_overflow(event, &data, &regs);
+	throttle = perf_event_overflow(event, &data, &regs, iregs);
 out:
 	if (throttle)
 		perf_ibs_stop(event, 0);

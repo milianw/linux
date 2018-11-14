@@ -57,7 +57,7 @@ static void kvm_pmi_trigger_fn(struct irq_work *irq_work)
 
 static void kvm_perf_overflow(struct perf_event *perf_event,
 			      struct perf_sample_data *data,
-			      struct pt_regs *regs)
+			      struct pt_regs *regs, struct pt_regs *iregs)
 {
 	struct kvm_pmc *pmc = perf_event->overflow_handler_context;
 	struct kvm_pmu *pmu = pmc_to_pmu(pmc);
@@ -71,7 +71,7 @@ static void kvm_perf_overflow(struct perf_event *perf_event,
 
 static void kvm_perf_overflow_intr(struct perf_event *perf_event,
 				   struct perf_sample_data *data,
-				   struct pt_regs *regs)
+				   struct pt_regs *regs, struct pt_regs *iregs)
 {
 	struct kvm_pmc *pmc = perf_event->overflow_handler_context;
 	struct kvm_pmu *pmu = pmc_to_pmu(pmc);

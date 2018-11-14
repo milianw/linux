@@ -499,7 +499,7 @@ static int genregs_set(struct task_struct *target,
 
 static void ptrace_triggered(struct perf_event *bp,
 			     struct perf_sample_data *data,
-			     struct pt_regs *regs)
+			     struct pt_regs *regs, struct pt_regs *iregs)
 {
 	int i;
 	struct thread_struct *thread = &(current->thread);

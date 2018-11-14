@@ -28,7 +28,7 @@ static struct perf_event_attr nmi_timer_attr = {
 
 static void nmi_timer_callback(struct perf_event *event,
 			       struct perf_sample_data *data,
-			       struct pt_regs *regs)
+			       struct pt_regs *regs, struct pt_regs *iregs)
 {
 	event->hw.interrupts = 0;       /* don't throttle interrupts */
 	oprofile_add_sample(regs, 0);

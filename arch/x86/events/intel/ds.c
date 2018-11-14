@@ -639,7 +639,7 @@ int intel_pmu_drain_bts_buffer(void)
 	 * the sample.
 	 */
 	rcu_read_lock();
-	perf_prepare_sample(&header, &data, event, &regs);
+	perf_prepare_sample(&header, &data, event, &regs, &regs);
 
 	if (perf_output_begin(&handle, event, header.size *
 			      (top - base - skip)))
@@ -1273,7 +1273,6 @@ static void setup_pebs_sample_data(struct perf_event *event,
 		set_linear_ip(regs, pebs->ip);
 	}
 
-
 	if ((sample_type & (PERF_SAMPLE_ADDR | PERF_SAMPLE_PHYS_ADDR)) &&
 	    x86_pmu.intel_cap.pebs_format >= 1)
 		data->addr = pebs->dla;
@@ -1430,7 +1429,7 @@ static void __intel_pmu_pebs_event(struct perf_event *event,
 
 	while (count > 1) {
 		setup_pebs_sample_data(event, iregs, at, &data, &regs);
-		perf_event_output(event, &data, &regs);
+		perf_event_output(event, &data, &regs, iregs);
 		at += x86_pmu.pebs_record_size;
 		at = get_next_pebs_record_by_bit(at, top, bit);
 		count--;
@@ -1442,7 +1441,7 @@ static void __intel_pmu_pebs_event(struct perf_event *event,
 	 * All but the last records are processed.
 	 * The last one is left to be able to call the overflow handler.
 	 */
-	if (perf_event_overflow(event, &data, &regs)) {
+	if (perf_event_overflow(event, &data, &regs, iregs)) {
 		x86_pmu_stop(event, 0);
 		return;
 	}

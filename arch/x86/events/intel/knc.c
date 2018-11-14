@@ -252,7 +252,7 @@ again:
 
 		perf_sample_data_init(&data, 0, event->hw.last_period);
 
-		if (perf_event_overflow(event, &data, regs))
+		if (perf_event_overflow(event, &data, regs, regs))
 			x86_pmu_stop(event, 0);
 	}
 

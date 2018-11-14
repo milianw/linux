@@ -506,7 +506,8 @@ struct perf_sample_data;
 
 typedef void (*perf_overflow_handler_t)(struct perf_event *,
 					struct perf_sample_data *,
-					struct pt_regs *regs);
+					struct pt_regs *regs,
+					struct pt_regs *iregs);
 
 /*
  * Event capabilities. For event_caps and groups caps.
@@ -966,21 +967,26 @@ extern void perf_output_sample(struct perf_output_handle *handle,
 extern void perf_prepare_sample(struct perf_event_header *header,
 				struct perf_sample_data *data,
 				struct perf_event *event,
-				struct pt_regs *regs);
+				struct pt_regs *regs,
+				struct pt_regs *iregs);
 
 extern int perf_event_overflow(struct perf_event *event,
 				 struct perf_sample_data *data,
-				 struct pt_regs *regs);
+				 struct pt_regs *regs,
+				 struct pt_regs *iregs);
 
 extern void perf_event_output_forward(struct perf_event *event,
 				     struct perf_sample_data *data,
-				     struct pt_regs *regs);
+				     struct pt_regs *regs,
+				     struct pt_regs *iregs);
 extern void perf_event_output_backward(struct perf_event *event,
 				       struct perf_sample_data *data,
-				       struct pt_regs *regs);
+				       struct pt_regs *regs,
+				       struct pt_regs *iregs);
 extern void perf_event_output(struct perf_event *event,
 			      struct perf_sample_data *data,
-			      struct pt_regs *regs);
+			      struct pt_regs *regs,
+			      struct pt_regs *iregs);
 
 static inline bool
 is_default_overflow_handler(struct perf_event *event)
