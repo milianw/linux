@@ -492,12 +492,12 @@ static int access_mem(unw_addr_space_t __maybe_unused as,
 	int ret;
 
 	/* Don't support write, probably not needed. */
-	if (__write || !stack || !ui->sample->user_regs.regs) {
+	if (__write || !stack || !ui->sample->intr_regs.regs) {
 		*valp = 0;
 		return 0;
 	}
 
-	ret = perf_reg_value(&start, &ui->sample->user_regs,
+	ret = perf_reg_value(&start, &ui->sample->intr_regs,
 			     LIBUNWIND__ARCH_REG_SP);
 	if (ret)
 		return ret;
@@ -541,7 +541,7 @@ static int access_reg(unw_addr_space_t __maybe_unused as,
 		return 0;
 	}
 
-	if (!ui->sample->user_regs.regs) {
+	if (!ui->sample->intr_regs.regs) {
 		*valp = 0;
 		return 0;
 	}
@@ -550,7 +550,7 @@ static int access_reg(unw_addr_space_t __maybe_unused as,
 	if (id < 0)
 		return -EINVAL;
 
-	ret = perf_reg_value(&val, &ui->sample->user_regs, id);
+	ret = perf_reg_value(&val, &ui->sample->intr_regs, id);
 	if (ret) {
 		pr_err("unwind: can't read reg %d\n", regnum);
 		return ret;
@@ -716,7 +716,7 @@ static int _unwind__get_entries(unwind_entry_cb_t cb, void *arg,
 		.machine      = thread->mg->machine,
 	};
 
-	if (!data->user_regs.regs)
+	if (!data->intr_regs.regs)
 		return -EINVAL;
 
 	if (max_stack <= 0)
